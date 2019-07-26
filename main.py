@@ -2,6 +2,8 @@ import pydicom as dicom
 import numpy as np
 import cv2
 from nn import *
+from keras_resnet.models import ResNet50
+from keras_resnet.blocks import basic_2d
 import os
 from PIL import Image, ImageFilter
 from sklearn.model_selection import train_test_split
@@ -112,10 +114,10 @@ if __name__ == '__main__':
 
     xtrain, xvalid, ytrain, yvalid = train_test_split(xtrain, ytrain, test_size=0.2)
 
-    if version == 1:
-        model = resnet_v1(shape=input_shape, depth=depth, num_classes=num_classes)
-    else:
-        model = resnet_v2(shape=input_shape, depth=depth, num_classes=num_classes)
+    #if version == 1:
+        #model = resnet_v1(shape=input_shape, depth=depth, num_classes=num_classes)
+    #else:
+        #model = resnet_v2(shape=input_shape, depth=depth, num_classes=num_classes)
 
     model = unet(input_size=input_shape)
 
@@ -138,5 +140,7 @@ if __name__ == '__main__':
 
     callbacks = [checkpoint, lr_reducer, lr_scheduler]
     
-    model.fit(xtrain, ytrain, batch_size=1, epochs=epochs, validation_data=(xtrain, ytrain), shuffle=True, callbacks=callbacks)
-    
+    model.fit(xtrain, ytrain, batch_size=1, epochs=epochs, validation_data=(xtest, ytest), shuffle=True, callbacks=callbacks)
+
+    results = model.predict(xtest)
+    print(results)
