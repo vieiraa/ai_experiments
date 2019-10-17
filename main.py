@@ -234,7 +234,7 @@ if __name__ == '__main__':
 
     model = unet(input_size=input_shape)
     model.summary()
-    #model.fit_generator(myGene,steps_per_epoch=10,epochs=1,callbacks=[model_checkpoint])
+    model.fit_generator(myGene,steps_per_epoch=10,epochs=1,callbacks=[model_checkpoint])
     
     
     #debug(ytrain.shape)
@@ -254,9 +254,9 @@ if __name__ == '__main__':
     callbacks = [lr_reducer, lr_scheduler]
     
     
-    model.fit(xtrain, ytrain, batch_size=batch_size, epochs=epochs, validation_data=(xvalid, yvalid), shuffle=True, callbacks=callbacks)
-    #predict = model.predict_generator(testGene,15,verbose=1)
-    predict = model.predict(xvalid, verbose=1)
+    #model.fit(xtrain, ytrain, batch_size=batch_size, epochs=epochs, validation_data=(xvalid, yvalid), shuffle=True, callbacks=callbacks)
+    predict = model.predict_generator(testGene,15,verbose=1)
+    #predict = model.predict(xvalid, verbose=1)
     
     for p in predict:
         show_img(normalize(p), method='cv2', norm=True)
