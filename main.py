@@ -145,80 +145,9 @@ def adjustData(img,mask,flag_multi_class,num_class):
     return (img,mask)
 
 if __name__ == '__main__':
-    #gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.333)
-    #session = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
-    #set_session(session)
     batch_size = 1
     epochs = 1
     data_aug = False
-        
-    #matrix = np.fromfile('./input/Phantom.dat', np.int8)
-    #matrix = np.where(np.isin(matrix, [1, 4, 6, 7, 8, 9, 10, 11, 12]), matrix, 0)
-    #matrix = np.reshape(matrix, (1700, 1254, 627))
-    
-    scans = load_scans('data/input')
-    #xtrain = load_img('input')
-    xtrain = []
-    for s in scans:
-        #p = s
-        p = crop_bg(s.pixel_array)
-        
-        
-        p = normalize(p)
-        p = Image.fromarray(p)
-        p = p.resize((256, 256))
-        p = np.array(p)
-        #p = cv2.resize(p, (608, 1696), interpolation=cv2.INTER_AREA)
-        p = cv2.resize(p, (256, 256), interpolation=cv2.INTER_AREA)
-        #shape = p.shape + (1,)
-        #p = np.reshape(p, shape)
-        #p = cv2.cvtColor(p,cv2.COLOR_GRAY2RGB)
-        
-        xtrain.append(p)
-        #break
-
-    #xtrain = xtrain.copy() + xtrain.copy() + xtrain.copy()
-    #xtrain = []
-    #for _ in range(20):
-    #    xtrain += xt.copy()
-    #xtrain = np.array(xtrain, np.int8) / np.max(xtrain)
-    xtrain = np.array(xtrain)
-    xtrain = np.reshape(xtrain, xtrain.shape + (1,))
-    #print(xtrain.shape)
-    #print(xtrain.shape)
-    #Image.fromarray(xtrain[0]).show()
-    #exit(0)
-    #xtrain = xtrain.flatten()
-    #print(xtrain.shape)
-    #exit(0)
-    input_shape = xtrain.shape[1:]
-    #ytrain = load_img('output')
-    ytrain = []
-    scans = load_scans('data/output')
-    for s in scans:
-    #    p = s
-        p = crop_bg(s.pixel_array)
-        p = normalize(p)
-        p = Image.fromarray(p)
-        p = p.resize((256, 256))
-        p = np.array(p)
-        #p = cv2.resize(p, (608, 1696), interpolation=cv2.INTER_AREA)
-        #p = cv2.resize(p, (256, 256), interpolation=cv2.INTER_AREA)
-        #shape = p.shape + (1,)
-        #p = np.reshape(p, shape)
-        #p = cv2.cvtColor(p,cv2.COLOR_GRAY2RGB)
-        
-        ytrain.append(p)
-        #break
-    
-    ytrain = np.array(ytrain)
-    #print(xtrain.shape)
-    #exit(0)
-    ytrain = np.reshape(ytrain, ytrain.shape+(1,))
-    num_classes = np.unique(ytrain).shape[0]
-    #ytrain = keras.utils.to_categorical(ytrain)
-
-    xtrain, xvalid, ytrain, yvalid = train_test_split(xtrain, ytrain, test_size=0.2)
     
     data_gen_args = dict(rotation_range=0.2,
                     width_shift_range=0.05,
@@ -227,38 +156,20 @@ if __name__ == '__main__':
                     zoom_range=0.05,
                     horizontal_flip=True,
                     fill_mode='nearest')
-    #myGene = trainGenerator(2,'data','input','output',data_gen_args,save_to_dir = None)
-    #testGene = testGenerator('data/output', 15)
-    #model = unet()
-    #model_checkpoint = ModelCheckpoint('unet_membrane.hdf5', monitor='loss',verbose=1, save_best_only=True)
+    myGene = trainGenerator(2,'data','input','output',data_gen_args,save_to_dir = None)
+    testGene = testGenerator('data/output', 15)
+    model = unet()
+    model_checkpoint = ModelCheckpoint('unet_membrane.hdf5', monitor='loss',verbose=1, save_best_only=True)
 
-    model = unet(input_size=input_shape)
+    #model = unet(input_size=input_shape)
     model.summary()
     model.fit_generator(myGene,steps_per_epoch=10,epochs=1,callbacks=[model_checkpoint])
-    
-    
-    #debug(ytrain.shape)
-    
-    """save_dir = os.path.join(os.getcwd(), 'saved')
-    model_name = f'cifar10_{model_type}_model.(epoch:03d).h5'
-    if not os.path.isdir(save_dir):
-        os.makedirs(save_dir)
-    filepath = os.path.join(save_dir, model_name)
-
-    checkpoint = ModelCheckpoint(filepath=filepath, monitor='val_acc', verbose=1, save_best_only=True)"""
 
     lr_scheduler = LearningRateScheduler(lr_sch)
     lr_reducer = ReduceLROnPlateau(factor=np.sqrt(0.1), cooldown=0, patience=5, min_lr=0.5e-6)
-
-    #callbacks = [checkpoint, lr_reducer, lr_scheduler]
-    callbacks = [lr_reducer, lr_scheduler]
     
-    
-    #model.fit(xtrain, ytrain, batch_size=batch_size, epochs=epochs, validation_data=(xvalid, yvalid), shuffle=True, callbacks=callbacks)
     predict = model.predict_generator(testGene,15,verbose=1)
-    #predict = model.predict(xvalid, verbose=1)
     
     for p in predict:
         show_img(normalize(p), method='cv2', norm=True)
-    
-    
+        break
