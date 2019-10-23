@@ -82,7 +82,7 @@ def load_img(path, format='.png'):
     
 def trainGenerator(batch_size,train_path,image_folder,mask_folder,aug_dict,image_color_mode = "grayscale",
                     mask_color_mode = "grayscale",image_save_prefix  = "image",mask_save_prefix  = "mask",
-                    flag_multi_class = False,num_class = 2,save_to_dir = None,target_size = (256,256),seed = 1):
+                    flag_multi_class = False,num_class = 2,save_to_dir = None,target_size = (256,256),seed = 1, dcm=False):
     '''
     can generate image and mask at the same time
     use the same seed for image_datagen and mask_datagen to ensure the transformation for image and mask is the same
@@ -90,39 +90,80 @@ def trainGenerator(batch_size,train_path,image_folder,mask_folder,aug_dict,image
     '''
     image_datagen = ImageDataGenerator(**aug_dict)
     mask_datagen = ImageDataGenerator(**aug_dict)
-    image_generator = image_datagen.flow_from_directory(
-        train_path,
-        classes = [image_folder],
-        class_mode = None,
-        color_mode = image_color_mode,
-        target_size = target_size,
-        batch_size = batch_size,
-        save_to_dir = save_to_dir,
-        save_prefix  = image_save_prefix,
-        seed = seed)
-    mask_generator = mask_datagen.flow_from_directory(
-        train_path,
-        classes = [mask_folder],
-        class_mode = None,
-        color_mode = mask_color_mode,
-        target_size = target_size,
-        batch_size = batch_size,
-        save_to_dir = save_to_dir,
-        save_prefix  = mask_save_prefix,
-        seed = seed)
+    
+    if not dcm:
+        image_generator = image_datagen.flow_from_directory(
+            train_path,
+            classes = [image_folder],
+            class_mode = None,
+            color_mode = image_color_mode,
+            target_size = target_size,
+            batch_size = batch_size,
+            save_to_dir = save_to_dir,
+            save_prefix  = image_save_prefix,
+            seed = seed)
+        mask_generator = mask_datagen.flow_from_directory(
+            train_path,
+            classes = [mask_folder],
+            class_mode = None,
+            color_mode = mask_color_mode,
+            target_size = target_size,
+            batch_size = batch_size,
+            save_to_dir = save_to_dir,
+            save_prefix  = mask_save_prefix,
+            seed = seed)
+    else:
+        image_scans = load_scans(train_path + '/' + image_folder)
+        mask_scans = load_scans(train_path + '/' + mask_folder)
+        
+        images = [s.pixel_array for s in image_scans]
+        masks = [s.pixel_array for s in mask_scans]
+        
+        for i in range(len(images)):
+            images[i] = cv2.resize(images[i], target_size, interpolation=cv2.INTER_AREA)
+            masks[i] = cv2.resize(masks[i], target_size, interpolation=cv2.INTER_AREA)
+            
+        images = np.array(images)
+        masks = np.array(masks)
+        
+        image_generator = image_datagen.flow(
+            images,
+            batch_size = batch_size,
+            save_to_dir = save_to_dir,
+            save_prefix  = image_save_prefix,
+            seed = seed)
+        
+        mask_generator = mask_datagen(
+            masks,
+            batch_size = batch_size,
+            save_to_dir = save_to_dir,
+            save_prefix  = image_save_prefix,
+            seed = seed)
+            
     train_generator = zip(image_generator, mask_generator)
     for (img,mask) in train_generator:
         img,mask = adjustData(img,mask,flag_multi_class,num_class)
         yield (img,mask)
         
-def testGenerator(test_path,num_image = 30,target_size = (256,256),flag_multi_class = False,as_gray = True):
-    for i in range(num_image):
-        img = io.imread(os.path.join(test_path,"_%d.png"%i),as_gray = as_gray)
-        img = img / 255
-        img = trans.resize(img,target_size)
-        img = np.reshape(img,img.shape+(1,)) if (not flag_multi_class) else img
-        img = np.reshape(img,(1,)+img.shape)
-        yield img
+def testGenerator(test_path,target_size = (256,256),flag_multi_class = False,as_gray = True, dcm=False):
+    if not dcm:
+        for image in os.listdir(test_path):
+            img = io.imread(os.path.join(test_path, image),as_gray = as_gray)
+            img = img / 255
+            img = trans.resize(img,target_size)
+            img = np.reshape(img,img.shape+(1,)) if (not flag_multi_class) else img
+            img = np.reshape(img,(1,)+img.shape)
+            yield img
+    else:
+        scans = load_scans(test_path)
+        for s in scans:
+            img = normalize(s.pixel_array)
+            img = img / 255
+            img = trans.resize(img,target_size)
+            img = np.reshape(img,img.shape+(1,)) if (not flag_multi_class) else img
+            img = np.reshape(img,(1,)+img.shape)
+            yield img
+            
 
 def adjustData(img,mask,flag_multi_class,num_class):
     if(flag_multi_class):
