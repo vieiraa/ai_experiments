@@ -135,7 +135,7 @@ def trainGenerator(batch_size,train_path,image_folder,mask_folder,aug_dict,image
             save_prefix  = image_save_prefix,
             seed = seed)
         
-        mask_generator = mask_datagen(
+        mask_generator = mask_datagen.flow(
             masks,
             batch_size = batch_size,
             save_to_dir = save_to_dir,
