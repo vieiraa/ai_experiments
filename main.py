@@ -125,6 +125,8 @@ def trainGenerator(batch_size,train_path,image_folder,mask_folder,aug_dict,image
             
         images = np.array(images)
         masks = np.array(masks)
+        images = np.reshape(images, images.shape + (1,))
+        masks = np.reshape(masks, masks.shape + (1,))
         
         image_generator = image_datagen.flow(
             images,
