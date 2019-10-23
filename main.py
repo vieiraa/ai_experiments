@@ -200,7 +200,7 @@ if __name__ == '__main__':
                     horizontal_flip=True,
                     fill_mode='nearest')
     myGene = trainGenerator(2,'data','input','output',data_gen_args,save_to_dir = None)
-    testGene = testGenerator('data/output', 15)
+    testGene = testGenerator('data/output')
     model = unet()
     model_checkpoint = ModelCheckpoint('unet_membrane.hdf5', monitor='loss',verbose=1, save_best_only=True)
 
@@ -211,7 +211,8 @@ if __name__ == '__main__':
     lr_scheduler = LearningRateScheduler(lr_sch)
     lr_reducer = ReduceLROnPlateau(factor=np.sqrt(0.1), cooldown=0, patience=5, min_lr=0.5e-6)
     
-    predict = model.predict_generator(testGene,15,verbose=1)
+    num_tests = len(os.listdir('data/output'))
+    predict = model.predict_generator(testGene, num_tests, verbose=1)
     
     for p in predict:
         show_img(normalize(p), method='cv2', norm=True)
