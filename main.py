@@ -116,8 +116,8 @@ def trainGenerator(batch_size,train_path,image_folder,mask_folder,aug_dict,image
         image_scans = load_scans(train_path + '/' + image_folder)
         mask_scans = load_scans(train_path + '/' + mask_folder)
         
-        images = [normalize(s.pixel_array) for s in image_scans]
-        masks = [normalize(s.pixel_array) for s in mask_scans]
+        images = [normalize(crop_bg(s.pixel_array)) for s in image_scans]
+        masks = [normalize(crop_bg(s.pixel_array)) for s in mask_scans]
         
         for i in range(len(images)):
             images[i] = cv2.resize(images[i], target_size, interpolation=cv2.INTER_AREA)
@@ -159,7 +159,7 @@ def testGenerator(test_path,target_size = (256,256),flag_multi_class = False,as_
     else:
         scans = load_scans(test_path)
         for s in scans:
-            img = normalize(s.pixel_array)
+            img = normalize(crop_bg(s.pixel_array))
             img = img / 255
             img = trans.resize(img,target_size)
             img = np.reshape(img,img.shape+(1,)) if (not flag_multi_class) else img
