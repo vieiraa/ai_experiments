@@ -34,8 +34,16 @@ def normalize(img):
 
     im = im / np.max(im)
     #print(np.max(im))
-    im *= 255
-    im = im.astype(np.uint8)
+    #im *= 255
+    #im = im.astype(np.uint8)
+
+    return im
+
+def binarize(img, thresh=0.5):
+    im = img.copy()
+
+    im[im > thresh] = 1.0 if thresh == 0.5 else 255
+    im[im <= thresh] = 0.0
 
     return im
 
@@ -52,13 +60,16 @@ def show_img(img, method='pillow', norm=False):
     elif method == 'pillow':
         Image.fromarray(im).show()
 
-def save_img(img, path, norm=False):
+def save_img(img, path, method='pillow', norm=False):
     im = img.copy()
     if norm:
         im = normalize(im)
 
-    Image.fromarray(im).save(path)
-    
+    if method == 'pillow':
+        Image.fromarray(im).save(path)
+    elif method == 'cv2':
+        cv2.imwrite(path, im)
+
 def load_scans(path):
     scans = []
     for f in os.listdir(path):
@@ -116,8 +127,11 @@ def trainGenerator(batch_size,train_path,image_folder,mask_folder,aug_dict,image
         image_scans = load_scans(train_path + '/' + image_folder)
         mask_scans = load_scans(train_path + '/' + mask_folder)
         
-        images = [normalize(crop_bg(s.pixel_array)) for s in image_scans]
-        masks = [normalize(crop_bg(s.pixel_array)) for s in mask_scans]
+        #masks = [normalize(crop_bg(s.pixel_array)) for s in mask_scans]
+        #images = [normalize(crop_bg(s.pixel_array)) for s in image_scans]
+
+        masks = [normalize((s.pixel_array)) for s in mask_scans]
+        images = [normalize((s.pixel_array)) for s in image_scans]
         
         for i in range(len(images)):
             images[i] = cv2.resize(images[i], target_size, interpolation=cv2.INTER_AREA)
@@ -144,7 +158,10 @@ def trainGenerator(batch_size,train_path,image_folder,mask_folder,aug_dict,image
             
     train_generator = zip(image_generator, mask_generator)
     for (img,mask) in train_generator:
-        img,mask = adjustData(img,mask,flag_multi_class,num_class)
+        img, mask = adjustData(img,mask,flag_multi_class,num_class)
+        #img = normalize(img)
+        #mask = normalize(mask)
+        #mask = binarize(mask)
         yield (img,mask)
         
 def testGenerator(test_path,target_size = (256,256),flag_multi_class = False,as_gray = True, dcm=True):
@@ -159,8 +176,9 @@ def testGenerator(test_path,target_size = (256,256),flag_multi_class = False,as_
     else:
         scans = load_scans(test_path)
         for s in scans:
-            img = normalize(crop_bg(s.pixel_array))
-            img = img / 255
+            #img = normalize(crop_bg(s.pixel_array))
+            img = normalize((s.pixel_array))
+            #img = img / 255
             img = trans.resize(img,target_size)
             img = np.reshape(img,img.shape+(1,)) if (not flag_multi_class) else img
             img = np.reshape(img,(1,)+img.shape)
@@ -169,7 +187,7 @@ def testGenerator(test_path,target_size = (256,256),flag_multi_class = False,as_
 
 def adjustData(img,mask,flag_multi_class,num_class):
     if(flag_multi_class):
-        img = img / 255
+        #img = img / 255
         mask = mask[:,:,:,0] if(len(mask.shape) == 4) else mask[:,:,0]
         new_mask = np.zeros(mask.shape + (num_class,))
         for i in range(num_class):
@@ -180,9 +198,10 @@ def adjustData(img,mask,flag_multi_class,num_class):
             new_mask[mask == i,i] = 1
         new_mask = np.reshape(new_mask,(new_mask.shape[0],new_mask.shape[1]*new_mask.shape[2],new_mask.shape[3])) if flag_multi_class else np.reshape(new_mask,(new_mask.shape[0]*new_mask.shape[1],new_mask.shape[2]))
         mask = new_mask
-    elif np.max(img) > 1:
+    else:
         img = normalize(img)
         mask = normalize(mask)
+        
         mask[mask > 0.5] = 1
         mask[mask <= 0.5] = 0
 
@@ -200,7 +219,7 @@ if __name__ == '__main__':
                     zoom_range=0.05,
                     horizontal_flip=True,
                     fill_mode='nearest')
-    myGene = trainGenerator(2,'data','input','output',data_gen_args,save_to_dir = None)
+    myGene = trainGenerator(2,'data','input','output',aug_dict=data_gen_args,save_to_dir = None)
     testGene = testGenerator('data/output')
     model = unet()
     model_checkpoint = ModelCheckpoint('unet_membrane.hdf5', monitor='loss',verbose=1, save_best_only=True)
@@ -216,5 +235,6 @@ if __name__ == '__main__':
     predict = model.predict_generator(testGene, num_tests, verbose=1)
     
     for p in predict:
-        show_img(normalize(p), method='cv2', norm=True)
+        #show_img(normalize(p), method='cv2', norm=True)
+        show_img(p, method='cv2', norm=True)
         break
