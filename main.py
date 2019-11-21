@@ -47,6 +47,12 @@ def binarize(img, thresh=0.5):
 
     return im
 
+def invert(img):
+    im = img.copy()
+    ones = np.ones_like(im)
+
+    return ones - im
+
 def show_img(img, method='pillow', norm=False):
     im = img.copy()
     
@@ -155,14 +161,14 @@ def trainGenerator(batch_size,train_path,image_folder,mask_folder,aug_dict,image
             save_to_dir = save_to_dir,
             save_prefix  = image_save_prefix,
             seed = seed)
-            
+
     train_generator = zip(image_generator, mask_generator)
-    for (img,mask) in train_generator:
-        img, mask = adjustData(img,mask,flag_multi_class,num_class)
+    for (img, mask) in train_generator:
+        img, mask = adjustData(img, mask, flag_multi_class, num_class)
         #img = normalize(img)
         #mask = normalize(mask)
         #mask = binarize(mask)
-        yield (img,mask)
+        yield (img, mask)
         
 def testGenerator(test_path,target_size = (256,256),flag_multi_class = False,as_gray = True, dcm=True):
     if not dcm:
@@ -178,6 +184,7 @@ def testGenerator(test_path,target_size = (256,256),flag_multi_class = False,as_
         for s in scans:
             #img = normalize(crop_bg(s.pixel_array))
             img = normalize((s.pixel_array))
+            #img = invert(img)
             #img = img / 255
             img = trans.resize(img,target_size)
             img = np.reshape(img,img.shape+(1,)) if (not flag_multi_class) else img
@@ -201,9 +208,11 @@ def adjustData(img,mask,flag_multi_class,num_class):
     else:
         img = normalize(img)
         mask = normalize(mask)
+        #img = invert(img)
+        #mask = invert(mask)
         
-        mask[mask > 0.5] = 1
-        mask[mask <= 0.5] = 0
+        mask[mask > 0.5] = 1.0
+        mask[mask <= 0.5] = 0.0
 
     return (img,mask)
 
@@ -219,14 +228,14 @@ if __name__ == '__main__':
                     zoom_range=0.05,
                     horizontal_flip=True,
                     fill_mode='nearest')
-    myGene = trainGenerator(2,'data','input','output',aug_dict=data_gen_args,save_to_dir = None)
-    testGene = testGenerator('data/output')
+    myGene = trainGenerator(batch_size,'data','input','output',aug_dict=data_gen_args,save_to_dir = None)
+    testGene = testGenerator('data/input')
     model = unet()
     model_checkpoint = ModelCheckpoint('unet_membrane.hdf5', monitor='loss',verbose=1, save_best_only=True)
 
     #model = unet(input_size=input_shape)
     model.summary()
-    model.fit_generator(myGene,steps_per_epoch=10,epochs=1,callbacks=[model_checkpoint])
+    model.fit_generator(myGene,steps_per_epoch=100,epochs=epochs,callbacks=[model_checkpoint])
 
     lr_scheduler = LearningRateScheduler(lr_sch)
     lr_reducer = ReduceLROnPlateau(factor=np.sqrt(0.1), cooldown=0, patience=5, min_lr=0.5e-6)
@@ -236,5 +245,5 @@ if __name__ == '__main__':
     
     for p in predict:
         #show_img(normalize(p), method='cv2', norm=True)
-        show_img(p, method='cv2', norm=True)
+        show_img(p * 255, method='cv2', norm=True)
         break
