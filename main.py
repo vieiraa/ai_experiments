@@ -103,7 +103,7 @@ def load_img(path, format='.png'):
     
     return scans
     
-def trainGenerator(train, masks, batch_size, aug_dict, image_color_mode="grayscale",
+def trainGenerator(input_train, input_masks, batch_size, aug_dict, image_color_mode="grayscale",
                    mask_color_mode="grayscale", image_save_prefix="image", mask_save_prefix="mask",
                    flag_multi_class=False, num_class=2, save_to_dir=None, target_size=(256,256), seed=1, dcm=True):
     '''
@@ -142,8 +142,8 @@ def trainGenerator(train, masks, batch_size, aug_dict, image_color_mode="graysca
     #masks = [normalize(crop_bg(s.pixel_array)) for s in mask_scans]
     #images = [normalize(crop_bg(s.pixel_array)) for s in image_scans]
 
-    masks = [normalize((s.pixel_array)) for s in masks]
-    images = [normalize((s.pixel_array)) for s in train]
+    masks = [normalize((s.pixel_array)) for s in input_masks]
+    images = [normalize((s.pixel_array)) for s in input_train]
     
     for i in range(len(images)):
         images[i] = cv2.resize(images[i], target_size, interpolation=cv2.INTER_AREA)
