@@ -238,6 +238,7 @@ if __name__ == '__main__':
     images = load_scans('data/input')
     masks = load_scans('data/masks')
     X_train, X_test, y_train, y_test = train_test_split(images, masks, test_size=0.2)
+    #X_test = dicom.dcmread('data/input/') # test with specific scan
     myGene = trainGenerator(X_train, y_train, batch_size, aug_dict=data_gen_args, save_to_dir=None)
     testGene = testGenerator(X_test)
     model = unet()
