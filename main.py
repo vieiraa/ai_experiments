@@ -79,7 +79,13 @@ def save_img(img, path, method='pillow', norm=False):
 def load_scans(path):
     scans = []
     for f in os.listdir(path):
-        if f.find('.dcm') != -1:
+        folder = os.path.join(path, f)
+        if os.path.isdir(folder):
+            for img in os.listdir(folder):
+                if img.find('.dcm') != -1:
+                    scans.append(os.path.join(folder, img))
+
+        elif f.find('.dcm') != -1:
             scans.append(os.path.join(path, f))
     
     scans = [dicom.dcmread(s) for s in scans]
@@ -222,12 +228,13 @@ if __name__ == '__main__':
     data_aug = False
     
     data_gen_args = dict(rotation_range=0.2,
-                    width_shift_range=0.05,
-                    height_shift_range=0.05,
-                    shear_range=0.05,
-                    zoom_range=0.05,
-                    horizontal_flip=True,
-                    fill_mode='nearest')
+                         width_shift_range=0.05,
+                         height_shift_range=0.05,
+                         shear_range=0.05,
+                         zoom_range=0.05,
+                         horizontal_flip=True,
+                         fill_mode='nearest')
+
     myGene = trainGenerator(batch_size,'data','input','output',aug_dict=data_gen_args,save_to_dir = None)
     testGene = testGenerator('data/input')
     model = unet()
