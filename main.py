@@ -9,6 +9,7 @@ from PIL import Image, ImageFilter
 from sklearn.model_selection import train_test_split
 import skimage.io as io
 import skimage.transform as trans
+import gc
 
 def crop_bg(img, gauss=True):
     normm = normalize(img)
@@ -42,8 +43,8 @@ def normalize(img):
 def binarize(img, thresh=0.5):
     im = img.copy()
 
-    im[im > thresh] = 1.0 if thresh == 0.5 else 255
-    im[im <= thresh] = 0.0
+    im[im > thresh] = 1.0 if isinstance(thresh, float) else 255
+    im[im <= thresh] = 0.0 if isinstance(thresh, float) else 0
 
     return im
 
@@ -76,7 +77,7 @@ def save_img(img, path, method='pillow', norm=False):
     elif method == 'cv2':
         cv2.imwrite(path, im)
 
-def load_scans(path):
+def load_scans(path, target_size):
     scans = []
     for f in os.listdir(path):
         folder = os.path.join(path, f)
@@ -88,10 +89,17 @@ def load_scans(path):
         elif f.find('.dcm') != -1:
             scans.append(os.path.join(path, f))
     
-    scans = [dicom.dcmread(s) for s in scans]
-    #scans.sort(key = lambda x: int(x.InstanceNumber))
+    ret = []
+    for s in scans:
+        aux = dicom.dcmread(s).pixel_array
+        aux = normalize(aux)
+        aux = cv2.resize(aux, target_size, interpolation=cv2.INTER_AREA)
+        aux = binarize(aux)
+        ret.append(aux)
     
-    return scans
+    ret = np.array(ret)
+    ret = np.reshape(ret, ret.shape + (1,))
+    return ret
     
 def load_img(path, format='.png'):
     scans = []
@@ -103,7 +111,7 @@ def load_img(path, format='.png'):
     
     return scans
     
-def trainGenerator(input_train, input_masks, batch_size, aug_dict, image_color_mode="grayscale",
+def trainGenerator(images, masks, batch_size, aug_dict, image_color_mode="grayscale",
                    mask_color_mode="grayscale", image_save_prefix="image", mask_save_prefix="mask",
                    flag_multi_class=False, num_class=2, save_to_dir=None, target_size=(256,256), seed=1, dcm=True):
     '''
@@ -142,17 +150,17 @@ def trainGenerator(input_train, input_masks, batch_size, aug_dict, image_color_m
     #masks = [normalize(crop_bg(s.pixel_array)) for s in mask_scans]
     #images = [normalize(crop_bg(s.pixel_array)) for s in image_scans]
 
-    masks = [normalize((s.pixel_array)) for s in input_masks]
-    images = [normalize((s.pixel_array)) for s in input_train]
+    #masks = [normalize((s.pixel_array)) for s in input_masks]
+    #images = [normalize((s.pixel_array)) for s in input_train]
     
-    for i in range(len(images)):
-        images[i] = cv2.resize(images[i], target_size, interpolation=cv2.INTER_AREA)
-        masks[i] = cv2.resize(masks[i], target_size, interpolation=cv2.INTER_AREA)
+    #for i in range(len(images)):
+    #    images[i] = cv2.resize(images[i], target_size, interpolation=cv2.INTER_AREA)
+    #    masks[i] = cv2.resize(masks[i], target_size, interpolation=cv2.INTER_AREA)
         
-    images = np.array(images)
-    masks = np.array(masks)
-    images = np.reshape(images, images.shape + (1,))
-    masks = np.reshape(masks, masks.shape + (1,))
+    #images = np.array(input_train)
+    #masks = np.array(input_masks)
+    #images = np.reshape(images, images.shape + (1,))
+    #masks = np.reshape(masks, masks.shape + (1,))
     
     image_generator = image_datagen.flow(
         images,
@@ -170,7 +178,7 @@ def trainGenerator(input_train, input_masks, batch_size, aug_dict, image_color_m
 
     train_generator = zip(image_generator, mask_generator)
     for (img, mask) in train_generator:
-        img, mask = adjustData(img, mask, flag_multi_class, num_class)
+        #img, mask = adjustData(img, mask, flag_multi_class, num_class)
         #img = normalize(img)
         #mask = normalize(mask)
         #mask = binarize(mask)
@@ -189,12 +197,12 @@ def testGenerator(test, target_size=(256,256), flag_multi_class=False, as_gray=T
     #scans = load_scans(test_path)
     for s in test:
         #img = normalize(crop_bg(s.pixel_array))
-        img = normalize((s.pixel_array))
+        #img = normalize((s.pixel_array))
         #img = invert(img)
         #img = img / 255
-        img = trans.resize(img,target_size)
-        img = np.reshape(img,img.shape+(1,)) if (not flag_multi_class) else img
-        img = np.reshape(img,(1,)+img.shape)
+        #img = trans.resize(img,target_size)
+        #img = np.reshape(img,img.shape+(1,)) if (not flag_multi_class) else img
+        img = np.reshape(s, (1,) + s.shape)
         yield img
         
 
@@ -235,11 +243,17 @@ if __name__ == '__main__':
                          horizontal_flip=True,
                          fill_mode='nearest')
 
-    images = load_scans('data/input')
-    masks = load_scans('data/masks')
+    target_size = (256, 256)
+    images = load_scans('data/input', target_size)
+    masks = load_scans('data/masks', target_size)
+
     X_train, X_test, y_train, y_test = train_test_split(images, masks, test_size=0.2)
     #X_test = dicom.dcmread('data/input/') # test with specific scan
-    myGene = trainGenerator(X_train, y_train, batch_size, aug_dict=data_gen_args, save_to_dir=None)
+        
+    gc.collect() # collect unused memory. hopefully.
+    
+    myGene = trainGenerator(X_train, y_train, batch_size=batch_size, target_size=target_size, 
+                            aug_dict=data_gen_args, save_to_dir=None)
     testGene = testGenerator(X_test)
     model = unet()
     model_checkpoint = ModelCheckpoint('unet_membrane.hdf5', monitor='loss',verbose=1, save_best_only=True)
