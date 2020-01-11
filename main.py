@@ -182,10 +182,10 @@ if __name__ == '__main__':
     masks = load_scans('data/masks', target_size)
 
     X_train, X_test, y_train, y_test = train_test_split(images, masks, test_size=0.2)
-    X_test = [dicom.dcmread('data/input/0_0.1_425_1.0_0.01_1.0_1.0_4.0_deformed/_0.dcm').pixel_array] # test with specific scan
-    X_test[0] = normalize(X_test[0])
-    X_test[0] = cv2.resize(X_test[0], target_size, interpolation=cv2.INTER_AREA)
-    X_test = np.array(X_test)
+    #X_test = [dicom.dcmread('data/input/0_0.1_425_1.0_0.01_1.0_1.0_4.0_deformed/_0.dcm').pixel_array] # test with specific scan
+    #X_test[0] = normalize(X_test[0])
+    #X_test[0] = cv2.resize(X_test[0], target_size, interpolation=cv2.INTER_AREA)
+    #X_test = np.array(X_test)
         
     gc.collect() # collect unused memory. hopefully.
     
