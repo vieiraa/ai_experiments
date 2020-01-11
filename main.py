@@ -200,7 +200,7 @@ def testGenerator(test, target_size=(256,256), flag_multi_class=False, as_gray=T
         #img = normalize((s.pixel_array))
         #img = invert(img)
         #img = img / 255
-        #img = trans.resize(img,target_size)
+        #img = trans.resize(img, target_size)
         #img = np.reshape(img,img.shape+(1,)) if (not flag_multi_class) else img
         img = np.reshape(s, (1,) + s.shape)
         yield img
@@ -248,7 +248,9 @@ if __name__ == '__main__':
     masks = load_scans('data/masks', target_size)
 
     X_train, X_test, y_train, y_test = train_test_split(images, masks, test_size=0.2)
-    #X_test = dicom.dcmread('data/input/') # test with specific scan
+    #X_test = dicom.dcmread('data/input/').pixel_array # test with specific scan
+    #X_test = normalize(X_test)
+    #X_test = cv2.resize(X_test, target_size, interpolation=cv2.INTER_AREA)
         
     gc.collect() # collect unused memory. hopefully.
     
