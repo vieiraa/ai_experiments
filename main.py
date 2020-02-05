@@ -10,6 +10,7 @@ from sklearn.model_selection import train_test_split
 import skimage.io as io
 import skimage.transform as trans
 import gc
+#from multiprocessing.dummy import Pool
 
 def crop_bg(img, gauss=True):
     normm = normalize(img)
@@ -29,61 +30,63 @@ def crop_bg(img, gauss=True):
     return img[y:y+h, x:x+w]
 
 def normalize(img):
-    im = img.copy()
+    #im = img.copy()
 
-    im = im / np.max(im)
+    img = img / np.max(img)
 
-    return im
+    return img
 
 def binarize(img, thresh=0.5):
-    im = img.copy()
+    #im = img.copy()
 
-    im[im > thresh] = 1.0 if isinstance(thresh, float) else 255
-    im[im <= thresh] = 0.0 if isinstance(thresh, float) else 0
+    img[img > thresh] = 1.0 if isinstance(thresh, float) else 255
+    img[img <= thresh] = 0.0 if isinstance(thresh, float) else 0
 
-    return im
+    return img
 
 def invert(img):
-    im = img.copy()
-    ones = np.ones_like(im)
+    #im = img.copy()
+    ones = np.ones_like(img)
 
-    return ones - im
+    return ones - img
 
 def show_img(img, method='pillow', norm=False):
-    im = img.copy()
+    #im = img.copy()
     
     if norm:
-        im = normalize(im)
+        img = normalize(img)
     
     if method == 'cv2':
-        cv2.imshow('im', im)
+        cv2.imshow('im', img)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
     elif method == 'pillow':
-        Image.fromarray(im).show()
+        Image.fromarray(img).show()
 
 def save_img(img, path, method='pillow', norm=False):
-    im = img.copy()
+    #im = img.copy()
     if norm:
-        im = normalize(im)
+        img = normalize(img)
 
     if method == 'pillow':
-        Image.fromarray(im).save(path)
+        Image.fromarray(img).save(path)
     elif method == 'cv2':
-        cv2.imwrite(path, im)
+        cv2.imwrite(path, img)
+
+def append_scan(scan):
+    aux = dicom.dcmread(scan[0]).pixel_array
+    aux = normalize(aux)
+    aux = cv2.resize(aux, scan[1], interpolation=cv2.INTER_AREA)
+    aux = binarize(aux)
+    scan[2].append(aux)
 
 def load_scans(path, target_size):
     scans = []
-    for f in os.listdir(path):
-        folder = os.path.join(path, f)
-        if os.path.isdir(folder):
-            for img in os.listdir(folder):
-                if img.find('.dcm') != -1:
-                    scans.append(os.path.join(folder, img))
+    for root, _, files in os.walk(path):
+        for f in files:
+            if f.find('.dcm') != -1:
+                scans.append(f'{root}/{f}')
 
-        elif f.find('.dcm') != -1:
-            scans.append(os.path.join(path, f))
-    
     ret = []
     for s in scans:
         aux = dicom.dcmread(s).pixel_array
@@ -91,9 +94,12 @@ def load_scans(path, target_size):
         aux = cv2.resize(aux, target_size, interpolation=cv2.INTER_AREA)
         aux = binarize(aux)
         ret.append(aux)
+
+    #pool = Pool(4)
+    #pool.map(append_scan, ((s, target_size, ret) for s in scans))
     
     ret = np.array(ret)
-    ret = np.reshape(ret, ret.shape + (1,))
+    #ret = np.reshape(ret, ret.shape + (1,))
     return ret
     
 def load_img(path, format='.png'):
@@ -133,6 +139,8 @@ def trainGenerator(images, masks, batch_size, aug_dict, image_color_mode="graysc
 
     train_generator = zip(image_generator, mask_generator)
     for (img, mask) in train_generator:
+        img = np.reshape(img, img.shape + (1,))
+        mask = np.reshape(mask, mask.shape + (1,))
         yield (img, mask)
         
 def testGenerator(test, target_size=(256,256), flag_multi_class=False, as_gray=True, dcm=True):
@@ -168,7 +176,7 @@ if __name__ == '__main__':
     epochs = 1
     data_aug = False
     steps_per_epoch = 1
-    
+    target_size = (256, 256)
     data_gen_args = dict(rotation_range=0.2,
                          width_shift_range=0.05,
                          height_shift_range=0.05,
@@ -177,8 +185,9 @@ if __name__ == '__main__':
                          horizontal_flip=True,
                          fill_mode='nearest')
 
-    target_size = (256, 256)
+    print('Loading scans')
     images = load_scans('data/input', target_size)
+    print('Loading masks')
     masks = load_scans('data/masks', target_size)
 
     X_train, X_test, y_train, y_test = train_test_split(images, masks, test_size=0.2)
