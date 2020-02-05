@@ -13,12 +13,13 @@ import gc
 #from multiprocessing.dummy import Pool
 
 def crop_bg(img, gauss=True):
-    normm = normalize(img)
+    normm = normalize(img, True)
     
     edge = Image.fromarray(normm, 'L')
     if gauss:
         edge = edge.filter(ImageFilter.GaussianBlur)
     edge = edge.filter(ImageFilter.FIND_EDGES)
+    
     x, y = edge.size
     edge = edge.crop((1,1,x-1,y-1))
     edge = np.array(edge)
@@ -26,23 +27,26 @@ def crop_bg(img, gauss=True):
     points = np.argwhere(thresh!=0)
     points = np.fliplr(points)
     x, y, w, h = cv2.boundingRect(points)
+    ret = img[y:y+h, x:x+w]
+    return ret
 
-    return img[y:y+h, x:x+w]
-
-def normalize(img):
+def normalize(img, int8=False):
     #im = img.copy()
-
+    
     img = img / np.max(img)
+    
+    if int8:
+        img = (img * 255).astype(np.uint8)
 
     return img
 
 def binarize(img, thresh=0.5):
-    #im = img.copy()
+    im = img.copy()
 
-    img[img > thresh] = 1.0 if isinstance(thresh, float) else 255
-    img[img <= thresh] = 0.0 if isinstance(thresh, float) else 0
+    im[img > thresh] = 1.0 if isinstance(thresh, float) else 255
+    im[img <= thresh] = 0.0 if isinstance(thresh, float) else 0
 
-    return img
+    return im
 
 def invert(img):
     #im = img.copy()
@@ -80,7 +84,7 @@ def append_scan(scan):
     aux = binarize(aux)
     scan[2].append(aux)
 
-def load_scans(path, target_size):
+def load_scans(path, target_size, is_mask=False, save=None):
     scans = []
     for root, _, files in os.walk(path):
         for f in files:
@@ -91,24 +95,36 @@ def load_scans(path, target_size):
     for s in scans:
         aux = dicom.dcmread(s).pixel_array
         aux = normalize(aux)
+        #aux = crop_bg(aux)
         aux = cv2.resize(aux, target_size, interpolation=cv2.INTER_AREA)
-        aux = binarize(aux)
+        if is_mask:
+            aux = binarize(aux)
         ret.append(aux)
+        if save is not None:
+            split = s.split('/')
+            path = ''
+            for p in split:
+                if p.find('.dcm') == -1 and p not in ['data', 'input', 'output']:
+                    path += p
+            name = split[-1]
+            os.makedirs(f'{save[0]}/{path}', exist_ok=True)
+            cv2.imwrite(f'{save[0]}/{path}/{name}.{save[1]}', aux * 255)
 
     #pool = Pool(4)
     #pool.map(append_scan, ((s, target_size, ret) for s in scans))
     
     ret = np.array(ret)
-    #ret = np.reshape(ret, ret.shape + (1,))
+    ret = np.reshape(ret, ret.shape + (1,))
     return ret
     
 def load_img(path, format='.png'):
     scans = []
     for f in os.listdir(path):
         if f.find(format) != -1:
-            scans.append(os.path.join(path, f))
+            scans.append(np.array(Image.open(os.path.join(path, f))))
     
-    scans = [np.array(Image.open(s).resize((64,64))) for s in scans]
+    scans = np.array(scans)
+    scans = np.reshape(scans, scans.shape + (1,))
     
     return scans
     
@@ -139,13 +155,11 @@ def trainGenerator(images, masks, batch_size, aug_dict, image_color_mode="graysc
 
     train_generator = zip(image_generator, mask_generator)
     for (img, mask) in train_generator:
-        img = np.reshape(img, img.shape + (1,))
-        mask = np.reshape(mask, mask.shape + (1,))
         yield (img, mask)
         
 def testGenerator(test, target_size=(256,256), flag_multi_class=False, as_gray=True, dcm=True):
     for s in test:
-        img = np.reshape(s, (1,) + s.shape + (1,))
+        img = np.reshape(s, (1,) + s.shape)
         yield img
         
 
@@ -185,10 +199,14 @@ if __name__ == '__main__':
                          horizontal_flip=True,
                          fill_mode='nearest')
 
-    print('Loading scans')
-    images = load_scans('data/input', target_size)
-    print('Loading masks')
-    masks = load_scans('data/masks', target_size)
+    if not os.listdir('data/resized_input') or not os.listdir('data/resized_masks'):
+        print('Loading scans')
+        images = load_scans('data/input', target_size)#, ('data/resized_input', 'png'))
+        print('Loading masks')
+        masks = load_scans('data/masks', target_size, is_mask=True)#, ('data/resized_masks', 'png'))
+    else:
+        images = load_img('data/resized_input')
+        masks = load_img('data/resized_masks')
 
     X_train, X_test, y_train, y_test = train_test_split(images, masks, test_size=0.2)
     #X_test = [dicom.dcmread('data/input/0_0.1_425_1.0_0.01_1.0_1.0_4.0_deformed/_0.dcm').pixel_array] # test with specific scan
