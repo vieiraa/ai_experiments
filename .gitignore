@@ -1,3 +1,6 @@
 *.pyc
 *.dcm
 *.hdf5
+*.png
+*.jar
+*.zip
