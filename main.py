@@ -3,14 +3,9 @@ import numpy as np
 import cv2
 from nn import *
 import os
-import tensorflow as tf
-from keras.backend.tensorflow_backend import set_session
 from PIL import Image, ImageFilter
 from sklearn.model_selection import train_test_split
-import skimage.io as io
-import skimage.transform as trans
 import gc
-#from multiprocessing.dummy import Pool
 
 def crop_bg(img, gauss=True):
     normm = normalize(img, True)
@@ -30,9 +25,7 @@ def crop_bg(img, gauss=True):
     ret = img[y:y+h, x:x+w]
     return ret
 
-def normalize(img, int8=False):
-    #im = img.copy()
-    
+def normalize(img, int8=False):    
     img = img / np.max(img)
     
     if int8:
@@ -40,23 +33,16 @@ def normalize(img, int8=False):
 
     return img
 
-def binarize(img, thresh=0.5):
-    #im = img.copy()
+def binarize(img, thresh=0.5, max_val=1.0):
+    img[img > thresh] = max_val
+    img[img <= thresh] = 0.0
 
-    img[img > thresh] = 1.0 if isinstance(thresh, float) else 255
-    img[img <= thresh] = 0.0 if isinstance(thresh, float) else 0
-
-    #return im
-
-def invert(img):
-    #im = img.copy()
-    ones = np.ones_like(img)
+def invert(img, max_val=1.0):
+    ones = np.ones_like(img) * max_val
 
     return ones - img
 
 def show_img(img, method='pillow', norm=False):
-    #im = img.copy()
-    
     if norm:
         img = normalize(img)
     
@@ -68,7 +54,6 @@ def show_img(img, method='pillow', norm=False):
         Image.fromarray(img).show()
 
 def save_img(img, path, method='pillow', norm=False):
-    #im = img.copy()
     if norm:
         img = normalize(img)
 
@@ -87,13 +72,17 @@ def load_scans(path, target_size, is_mask=False, save=None):
     ret = []
     for s in scans:
         aux = dicom.dcmread(s).pixel_array
-        aux = normalize(aux)
+        #aux = normalize(aux)
+        max_val = (2 ** 14) - 1
+        aux = aux / max_val
         #aux = crop_bg(aux)
-        aux = cv2.resize(aux, target_size, interpolation=cv2.INTER_AREA)
 
         if is_mask:
-            binarize(aux)
+            aux = invert(aux)
+            thresh = 0.61
+            binarize(aux, thresh)
 
+        aux = cv2.resize(aux, target_size, interpolation=cv2.INTER_AREA)
         ret.append(aux)
         if save is not None:
             split = s.split('/')
@@ -104,7 +93,7 @@ def load_scans(path, target_size, is_mask=False, save=None):
             name = split[-1]
             os.makedirs(f'{save[0]}/{path}', exist_ok=True)
             cv2.imwrite(f'{save[0]}/{path}/{name}.{save[1]}', (aux * 255).astype(np.uint8))
-    
+
     ret = np.array(ret)
     ret = np.reshape(ret, ret.shape + (1,))
     return ret
@@ -115,31 +104,27 @@ def load_img(path, format='.png'):
         for f in files:
             if f.find(format) != -1:
                 scans.append(np.array(Image.open(os.path.join(root, f))))
-    
+
     scans = np.array(scans)
     scans = np.reshape(scans, scans.shape + (1,))
     scans = normalize(scans)
-    
+
     return scans
-    
+
 def trainGenerator(images, masks, batch_size, aug_dict, image_color_mode="grayscale",
                    mask_color_mode="grayscale", image_save_prefix="image", mask_save_prefix="mask",
                    flag_multi_class=False, num_class=2, save_to_dir=None, target_size=(256,256), seed=1, dcm=True):
-    '''
-    can generate image and mask at the same time
-    use the same seed for image_datagen and mask_datagen to ensure the transformation for image and mask is the same
-    if you want to visualize the results of generator, set save_to_dir = "your path"
-    '''
+
     image_datagen = ImageDataGenerator(**aug_dict)
     mask_datagen = ImageDataGenerator(**aug_dict)
-    
+
     image_generator = image_datagen.flow(
         images,
         batch_size = batch_size,
         save_to_dir = save_to_dir,
         save_prefix  = image_save_prefix,
         seed = seed)
-    
+
     mask_generator = mask_datagen.flow(
         masks,
         batch_size = batch_size,
@@ -150,7 +135,7 @@ def trainGenerator(images, masks, batch_size, aug_dict, image_color_mode="graysc
     train_generator = zip(image_generator, mask_generator)
     for (img, mask) in train_generator:
         yield (img, mask)
-        
+
 def testGenerator(test, target_size=(256,256), flag_multi_class=False, as_gray=True, dcm=True):
     for s in test:
         img = np.reshape(s, (1,) + s.shape)
@@ -158,7 +143,7 @@ def testGenerator(test, target_size=(256,256), flag_multi_class=False, as_gray=T
 
 if __name__ == '__main__':
     batch_size = 1
-    epochs = 30
+    epochs = 5
     data_aug = False
     steps_per_epoch = 20
     target_size = (256, 256)
@@ -170,21 +155,23 @@ if __name__ == '__main__':
                          horizontal_flip=True,
                          fill_mode='nearest')
 
-    if len(os.listdir('data/resized_input')) > 1:
+    if len(os.listdir('data/resized_input')) <= 1:
         print('Loading scans')
-        images = load_scans('data/input', target_size, save=('data/resized_input', 'png'))
+        images = load_scans('data/input', target_size)#, save=('data/resized_input', 'png'))
     else:
         images = load_img('data/resized_input')
-        
-    if len(os.listdir('data/resized_masks')) > 1:
+
+    if len(os.listdir('data/resized_masks')) <= 1:
         print('Loading masks')
-        masks = load_scans('data/masks', target_size, is_mask=True, save=('data/resized_masks', 'png'))
+        masks = load_scans('data/masks', target_size, is_mask=True)#, save=('data/resized_masks', 'png'))
     else:
         masks = load_img('data/resized_masks')
 
     X_train, X_test, y_train, y_test = train_test_split(images, masks, test_size=0.2)
     #X_test = [np.array(Image.open('data/0_0.1_425_1.0_0.1_1.0_1.0_2.0_deformed2/_0.dcm.png'))] # test with specific scan
-    #X_test = [dicom.dcmread('data/0_0.1_425_1.0_0.1_1.0_1.0_2.0_deformed2/_0.dcm.png').pixel_array] # test with specific scan
+    #X_test = [dicom.dcmread('data/bkp_input/0_0.1_850_1.0_0.1_1.0_1.0_2.0_deformed/_0.dcm').pixel_array] # test with specific scan
+    #max_val = (2 ** 14) - 1
+    #X_test[0] = X_test[0] / max_val
     #X_test[0] = normalize(X_test[0])
     #X_test[0] = cv2.resize(X_test[0], target_size, interpolation=cv2.INTER_AREA)
     #X_test = np.array(X_test)
@@ -195,9 +182,9 @@ if __name__ == '__main__':
     #y_test[0] = cv2.resize(y_test[0], target_size, interpolation=cv2.INTER_AREA)
     #y_test = np.array(y_test)
     #y_test = np.reshape(y_test, y_test.shape + (1,))
-        
+
     gc.collect() # collect unused memory. hopefully.
-    
+
     myGene = trainGenerator(X_train, y_train, batch_size=batch_size, target_size=target_size, 
                             aug_dict=data_gen_args, save_to_dir=None)
     testGene = testGenerator(X_test)
@@ -210,15 +197,16 @@ if __name__ == '__main__':
     model_checkpoint = ModelCheckpoint(weights_path, monitor='accuracy',verbose=1, save_best_only=True)
 
     model.summary()
-    callbacks = [model_checkpoint]
+    #callbacks = [model_checkpoint]
+    callbacks = []
     if not loaded_weights:
         model.fit_generator(myGene, steps_per_epoch=steps_per_epoch, epochs=epochs, callbacks=callbacks)
 
     lr_scheduler = LearningRateScheduler(lr_sch)
     lr_reducer = ReduceLROnPlateau(factor=np.sqrt(0.1), cooldown=0, patience=5, min_lr=0.5e-6)
-    
+
     num_tests = len(X_test)
     predict = model.predict_generator(testGene, num_tests, verbose=1)
-    
+
     for p in predict:
-        show_img(p, method='cv2', norm=True)
+        show_img(p, method='cv2')

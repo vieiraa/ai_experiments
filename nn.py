@@ -19,7 +19,7 @@ def debug(msg):
     print(msg)
     exit(0)
 
-def unet(pretrained_weights = None,input_size = (256,256,1)):
+def unet(pretrained_weights=None, input_size=(256,256,1)):
     inputs = Input(input_size)
 
     conv1 = Conv2D(64, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(inputs)
@@ -66,7 +66,7 @@ def unet(pretrained_weights = None,input_size = (256,256,1)):
     model = Model(input = inputs, output = conv10)
 
     model.compile(optimizer = Adam(lr = 1e-4), loss = 'binary_crossentropy', metrics = ['accuracy'])
-    
+
     #model.summary()
 
     if(pretrained_weights):
@@ -96,7 +96,7 @@ def resnet_layer(inputs,
     activation='relu',
     norm=True,
     conv_first=True):
-    
+
     conv = Conv2D(filters, 
                   kernel_size=kernel_size, 
                   strides=strides, 
@@ -116,7 +116,7 @@ def resnet_layer(inputs,
         if activation is not None:
             x = Activation(activation)(x)
         x = conv(x)
-    
+
     return x
 
 def resnet_v1(shape, depth, num_classes=10):
@@ -139,14 +139,14 @@ def resnet_v1(shape, depth, num_classes=10):
 
             if stack > 0 and block == 0:
                 x = resnet_layer(x, filters, 1, strides, None, False)
-            
+
             x = keras.layers.add([x, y])
             x = Activation('relu')(x)
         filters *= 2
 
     x = AveragePooling2D(pool_size=8)(x)
     y = Flatten()(x)
-    
+
     outputs = Dense(num_classes, activation='softmax', kernel_initializer='he_normal')(y)
     model = Model(inputs=inputs, outputs=outputs)
 
@@ -192,93 +192,5 @@ def resnet_v2(shape, depth, num_classes=10):
     y = Flatten()(x)
     outputs = Dense(num_classes, activation='softmax', kernel_initializer='he_normal')(y)
     model = Model(inputs=inputs, outputs=outputs)
-    
+
     return model
-
-if __name__ == '__main__':
-    batch_size = 128
-    epochs = 5
-    data_aug = False
-    num_classes = 10
-    sub_pixel_mean = True
-
-    n = 2
-    version = 2
-
-    if version == 1:
-        depth = n * 6 + 2
-    else:
-        depth = n * 9 + 2
-
-    model_type = f'ResNet{depth}v{version}'
-
-    (xtrain, ytrain), (xtest, ytest) = cifar10.load_data()
-    input_shape = xtrain.shape[1:]
-    xtrain = xtrain.astype('float32') / 255.0
-    xtest = xtest.astype('float32') / 255.0
-
-    if sub_pixel_mean:
-        x_mean = np.mean(xtrain, axis=0)
-        xtrain -= x_mean
-        xtest -= x_mean
-
-    ytrain = keras.utils.to_categorical(ytrain, num_classes)
-    ytest = keras.utils.to_categorical(ytest, num_classes)
-    
-    if version == 1:
-        model = resnet_v1(shape=input_shape, depth=depth)
-    else:
-        model = resnet_v2(shape=input_shape, depth=depth)
-
-    model.compile(loss='categorical_crossentropy', optimizer=Adam(lr=lr_sch(0)), metrics=['accuracy'])
-
-    model.summary()
-    print(model_type)
-
-    save_dir = os.path.join(os.getcwd(), 'saved')
-    model_name = f'cifar10_{model_type}_model.(epoch:03d).h5'
-    if not os.path.isdir(save_dir):
-        os.makedirs(save_dir)
-    filepath = os.path.join(save_dir, model_name)
-
-    checkpoint = ModelCheckpoint(filepath=filepath, monitor='val_acc', verbose=1, save_best_only=True)
-
-    lr_scheduler = LearningRateScheduler(lr_sch)
-    lr_reducer = ReduceLROnPlateau(factor=np.sqrt(0.1), cooldown=0, patience=5, min_lr=0.5e-6)
-
-    callbacks = [checkpoint, lr_reducer, lr_scheduler]
-
-    if not data_aug:
-        model.fit(xtrain, ytrain, batch_size=batch_size, epochs=epochs,
-                  validation_data=(xtest, ytest), shuffle=True, callbacks=callbacks)
-    else:
-        datagen = ImageDataGenerator(
-            featurewise_center=False,
-            samplewise_center=False,
-            featurewise_std_normalization=False,
-            samplewise_std_normalization=False,
-            zca_whitening=False,
-            zca_epsilon=1e-06,
-            rotation_range=0,
-            width_shift_range=0.1,
-            height_shift_range=0.1,
-            shear_range=0.,
-            zoom_range=0.,
-            channel_shift_range=0.,
-            fill_mode='nearest',
-            cval=0.,
-            horizontal_flip=True,
-            vertical_flip=False,
-            rescale=None,
-            preprocessing_function=None,
-            data_format=None,
-            validation_split=0.0)
-        datagen.fit(xtrain)
-        model.fit_generator(datagen.flow(xtrain, ytrain, batch_size=batch_size),
-                            validation_data=(xtest, ytest),
-                            epochs=epochs, verbose=1, workers=4,
-                            callbacks=callbacks)
-
-    scores = model.evaluate(xtest, ytest, verbose=1)
-    print('Test loss: ', scores[0])
-    print('Test accuracy: ', scores[1])
