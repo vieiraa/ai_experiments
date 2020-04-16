@@ -115,7 +115,7 @@ def load_img(path, format='.png'):
 
     return scans
 
-def trainGenerator(images, masks, batch_size, aug_dict, image_color_mode="grayscale",
+def train_generator(images, masks, batch_size, aug_dict, image_color_mode="grayscale",
                    mask_color_mode="grayscale", image_save_prefix="image", mask_save_prefix="mask",
                    flag_multi_class=False, num_class=2, save_to_dir=None, target_size=(256,256), seed=1, dcm=True):
 
@@ -136,11 +136,10 @@ def trainGenerator(images, masks, batch_size, aug_dict, image_color_mode="graysc
         save_prefix  = image_save_prefix,
         seed = seed)
 
-    train_generator = zip(image_generator, mask_generator)
-    for (img, mask) in train_generator:
+    for (img, mask) in zip(image_generator, mask_generator):
         yield (img, mask)
 
-def testGenerator(test, target_size=(256,256), flag_multi_class=False, as_gray=True, dcm=True):
+def test_generator(test, target_size=(256,256), flag_multi_class=False, as_gray=True, dcm=True):
     for s in test:
         img = np.reshape(s, (1,) + s.shape)
         yield img
@@ -159,21 +158,27 @@ if __name__ == '__main__':
                          horizontal_flip=True,
                          fill_mode='nearest')
 
-    if len(os.listdir('data/resized_input')) <= 1:
-        print('Loading scans')
-        images = load_scans('data/input', target_size)#, save=('data/resized_input', 'png'))
-    else:
-        print('Loading input images')
-        images = load_img('data/resized_input')
+    weights_path = f'unet_b_{batch_size}_e_{epochs}_s_{steps_per_epoch}_t_{target_size[0]}x{target_size[1]}.hdf5'
+    loaded_weights = False
+    if not os.path.exists(weights_path):
+        if len(os.listdir('data/resized_input')) <= 1:
+            print('Loading scans')
+            X_train = load_scans('data/input', target_size)#, save=('data/resized_input', 'png'))
+        else:
+            print('Loading input images')
+            X_train = load_img('data/resized_input')
 
-    if len(os.listdir('data/resized_masks')) <= 1:
-        print('Loading masks')
-        masks = load_scans('data/masks', target_size, is_mask=True)#, save=('data/resized_masks', 'png'))
+        if len(os.listdir('data/resized_masks')) <= 1:
+            print('Loading masks')
+            y_train = load_scans('data/masks', target_size, is_mask=True)#, save=('data/resized_masks', 'png'))
+        else:
+            print('Loading mask images')
+            y_train = load_img('data/resized_masks')
     else:
-        print('Loading mask images')
-        masks = load_img('data/resized_masks')
+        print('Loading saved weights')
+        loaded_weights = True
 
-    X_train, X_test, y_train, y_test = train_test_split(images, masks, test_size=0.2)
+    #X_train, X_test, y_train, y_test = train_test_split(X_train, y_train, test_size=0.2)
     X_test = [dicom.dcmread('data/test/test3_25/0_0.1_425_25.0_0.1_1.0_1.0_2.0_deformed.dcm').pixel_array,
               dicom.dcmread('data/test/test3_25/0_0.2_425_25.0_0.1_1.0_1.0_2.0_deformed.dcm').pixel_array,
               dicom.dcmread('data/test/test4_50/1_0.1_850_50.0_0.01_1.0_1.0_4.0_deformed.dcm').pixel_array,
@@ -191,6 +196,9 @@ if __name__ == '__main__':
 
     for i in range(len(y_test)):
         y_test[i] = y_test[i] / max_val
+        y_test[i] = invert(y_test[i])
+        thresh = 0.61
+        binarize(y_test[i], thresh)
         y_test[i] = cv2.resize(y_test[i], target_size, interpolation=cv2.INTER_AREA)
 
     X_test = np.array(X_test)
@@ -200,32 +208,33 @@ if __name__ == '__main__':
 
     gc.collect() # collect unused memory. hopefully.
 
-    myGene = trainGenerator(X_train, y_train, batch_size=batch_size, target_size=target_size, 
-                            aug_dict=data_gen_args, save_to_dir=None)
-    testGene = testGenerator(X_test)
     model = unet(input_size=target_size+(1,))
-    weights_path = f'unet_epochs_{epochs}_steps_{steps_per_epoch}.hdf5'
-    loaded_weights = False
-    if os.path.exists(weights_path):
-        loaded_weights = True
-        model.load_weights(weights_path)
-    model_checkpoint = ModelCheckpoint(weights_path, monitor='accuracy',verbose=1, save_best_only=True)
 
     model.summary()
-    #callbacks = []
-    callbacks = [model_checkpoint]
-    if not loaded_weights:
-        model.fit_generator(myGene, steps_per_epoch=steps_per_epoch, epochs=epochs, callbacks=callbacks)
+
+    if loaded_weights:
+        model.load_weights(weights_path)
+    else:
+        model_checkpoint = ModelCheckpoint(weights_path, monitor='accuracy',verbose=1, save_best_only=True)
+        #callbacks = []
+        callbacks = [model_checkpoint]
+        train_gene = train_generator(X_train, y_train, batch_size=batch_size, target_size=target_size,
+                                     aug_dict=data_gen_args, save_to_dir=None)
+        model.fit_generator(train_gene, steps_per_epoch=steps_per_epoch, epochs=epochs, callbacks=callbacks)
 
     lr_scheduler = LearningRateScheduler(lr_sch)
     lr_reducer = ReduceLROnPlateau(factor=np.sqrt(0.1), cooldown=0, patience=5, min_lr=0.5e-6)
 
     num_tests = len(X_test)
 
-    test_loss, test_acc = model.evaluate(X_test, y_test, batch_size=batch_size)
-    print(f'Test loss = {test_loss}, test acc = {test_acc}')
+    for (x, y) in zip(X_test, y_test):
+        x = np.reshape(x, (1,) + x.shape)
+        y = np.reshape(y, (1,) + y.shape)
+        test_loss, test_acc = model.evaluate(x, y, batch_size=batch_size)
+        print(f'Test loss = {test_loss}, test acc = {test_acc}')
 
-    predict = model.predict_generator(testGene, num_tests, verbose=1)
+    test_gene = test_generator(X_test)
+    predict = model.predict_generator(test_gene, num_tests, verbose=1)
 
     i = 0
     for p in predict:
