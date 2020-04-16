@@ -163,41 +163,47 @@ if __name__ == '__main__':
         print('Loading scans')
         images = load_scans('data/input', target_size)#, save=('data/resized_input', 'png'))
     else:
+        print('Loading input images')
         images = load_img('data/resized_input')
 
     if len(os.listdir('data/resized_masks')) <= 1:
         print('Loading masks')
         masks = load_scans('data/masks', target_size, is_mask=True)#, save=('data/resized_masks', 'png'))
     else:
+        print('Loading mask images')
         masks = load_img('data/resized_masks')
 
     X_train, X_test, y_train, y_test = train_test_split(images, masks, test_size=0.2)
-    #X_test = [np.array(Image.open('data/0_0.1_425_1.0_0.1_1.0_1.0_2.0_deformed2/_0.dcm.png'))] # test with specific scan
-    X_test = [dicom.dcmread('data/test/_7.dcm').pixel_array] # test with specific scan
-    
-    #CLAHE APICATION#
-    #clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-    #X_test[0] = clahe.apply(X_test[0])
-    
+    X_test = [dicom.dcmread('data/test/test3_25/0_0.1_425_25.0_0.1_1.0_1.0_2.0_deformed.dcm').pixel_array,
+              dicom.dcmread('data/test/test3_25/0_0.2_425_25.0_0.1_1.0_1.0_2.0_deformed.dcm').pixel_array,
+              dicom.dcmread('data/test/test4_50/1_0.1_850_50.0_0.01_1.0_1.0_4.0_deformed.dcm').pixel_array,
+              dicom.dcmread('data/test/test4_50/1_0.2_850_50.0_0.01_1.0_1.0_4.0_deformed.dcm').pixel_array]
+
+    y_test = [dicom.dcmread('data/test/test3_25/0_0.1_425_25.0_0.1_1.0_1.0_2.0_deformed_mask.dcm').pixel_array,
+              dicom.dcmread('data/test/test3_25/0_0.2_425_25.0_0.1_1.0_1.0_2.0_deformed_mask.dcm').pixel_array,
+              dicom.dcmread('data/test/test4_50/1_0.1_850_50.0_0.01_1.0_1.0_4.0_deformed_mask.dcm').pixel_array,
+              dicom.dcmread('data/test/test4_50/1_0.2_850_50.0_0.01_1.0_1.0_4.0_deformed_mask.dcm').pixel_array]
+
     max_val = (2 ** 14) - 1
-    X_test[0] = X_test[0] / max_val
-    #X_test[0] = normalize(X_test[0])
-    X_test[0] = cv2.resize(X_test[0], target_size, interpolation=cv2.INTER_AREA)
+    for i in range(len(X_test)):
+        X_test[i] = X_test[i] / max_val
+        X_test[i] = cv2.resize(X_test[i], target_size, interpolation=cv2.INTER_AREA)
+
+    for i in range(len(y_test)):
+        y_test[i] = y_test[i] / max_val
+        y_test[i] = cv2.resize(y_test[i], target_size, interpolation=cv2.INTER_AREA)
+
     X_test = np.array(X_test)
     X_test = np.reshape(X_test, X_test.shape + (1,))
-    #y_test = [np.array(Image.open('data/0_0.1_425_1.0_0.1_1.0_1.0_2.0_deformed_mask2/_0.dcm.png'))]
-    #y_test = [dicom.dcmread('data/0_0.1_425_1.0_0.1_1.0_1.0_2.0_deformed_mask2/_0.dcm.png').pixel_array] # test with specific scan
-    #y_test[0] = normalize(y_test[0])
-    #y_test[0] = cv2.resize(y_test[0], target_size, interpolation=cv2.INTER_AREA)
-    #y_test = np.array(y_test)
-    #y_test = np.reshape(y_test, y_test.shape + (1,))
+    y_test = np.array(y_test)
+    y_test = np.reshape(y_test, y_test.shape + (1,))
 
     gc.collect() # collect unused memory. hopefully.
 
     myGene = trainGenerator(X_train, y_train, batch_size=batch_size, target_size=target_size, 
                             aug_dict=data_gen_args, save_to_dir=None)
     testGene = testGenerator(X_test)
-    model = unet()
+    model = unet(input_size=target_size+(1,))
     weights_path = f'unet_epochs_{epochs}_steps_{steps_per_epoch}.hdf5'
     loaded_weights = False
     if os.path.exists(weights_path):
@@ -206,8 +212,8 @@ if __name__ == '__main__':
     model_checkpoint = ModelCheckpoint(weights_path, monitor='accuracy',verbose=1, save_best_only=True)
 
     model.summary()
-    #callbacks = [model_checkpoint]
-    callbacks = []
+    #callbacks = []
+    callbacks = [model_checkpoint]
     if not loaded_weights:
         model.fit_generator(myGene, steps_per_epoch=steps_per_epoch, epochs=epochs, callbacks=callbacks)
 
@@ -215,7 +221,14 @@ if __name__ == '__main__':
     lr_reducer = ReduceLROnPlateau(factor=np.sqrt(0.1), cooldown=0, patience=5, min_lr=0.5e-6)
 
     num_tests = len(X_test)
+
+    test_loss, test_acc = model.evaluate(X_test, y_test, batch_size=batch_size)
+    print(f'Test loss = {test_loss}, test acc = {test_acc}')
+
     predict = model.predict_generator(testGene, num_tests, verbose=1)
 
+    i = 0
     for p in predict:
         show_img(p, method='cv2')
+        show_img(y_test[i], method='cv2')
+        i += 1
