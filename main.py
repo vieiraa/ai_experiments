@@ -6,6 +6,10 @@ import os
 from PIL import Image, ImageFilter
 from sklearn.model_selection import train_test_split
 import gc
+import time
+
+max_14b = (2 ** 14) - 1
+max_16b = (2 ** 16) - 1
 
 def crop_bg(img, gauss=True):
     normm = normalize(img, True)
@@ -25,8 +29,8 @@ def crop_bg(img, gauss=True):
     ret = img[y:y+h, x:x+w]
     return ret
 
-def normalize(img, int8=False):    
-    img = img / np.max(img)
+def normalize(img, int8=False, max_val=None):
+    img = img / np.max(img) if max_val is None else img / max_val
     
     if int8:
         img = (img * 255).astype(np.uint8)
@@ -73,12 +77,7 @@ def load_scans(path, target_size, is_mask=False, save=None):
     for s in scans:
         aux = dicom.dcmread(s).pixel_array
 
-        #CLAHE APICATION
-        #clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-
-        #aux = normalize(aux)
-        max_val = (2 ** 14) - 1
-        aux = aux / max_val
+        aux = aux / max_14b
         #aux = crop_bg(aux)
 
         if is_mask:
@@ -88,7 +87,11 @@ def load_scans(path, target_size, is_mask=False, save=None):
 
         aux = cv2.resize(aux, target_size, interpolation=cv2.INTER_AREA)
         ret.append(aux)
-        if save is not None:
+
+    if save is not None:
+        print('Saving scans')
+
+        for (s, r) in zip(scans, ret):
             split = s.split('/')
             path = ''
             for p in split:
@@ -96,13 +99,16 @@ def load_scans(path, target_size, is_mask=False, save=None):
                     path += p
             name = split[-1]
             os.makedirs(f'{save[0]}/{path}', exist_ok=True)
-            cv2.imwrite(f'{save[0]}/{path}/{name}.{save[1]}', (aux * 255).astype(np.uint8))
+            if not is_mask:
+                cv2.imwrite(f'{save[0]}/{path}/{name}.{save[1]}', (r * max_14b).astype(np.uint16))
+            else:
+                cv2.imwrite(f'{save[0]}/{path}/{name}.{save[1]}', (r * max_16b).astype(np.uint16))
 
     ret = np.array(ret)
     ret = np.reshape(ret, ret.shape + (1,))
     return ret
     
-def load_img(path, format='.png'):
+def load_img(path, format='.png', is_mask=False):
     scans = []
     for root, _, files in os.walk(path):
         for f in files:
@@ -111,7 +117,7 @@ def load_img(path, format='.png'):
 
     scans = np.array(scans)
     scans = np.reshape(scans, scans.shape + (1,))
-    scans = normalize(scans)
+    scans = normalize(scans, max_14b) if not is_mask else normalize(scans, max_16b)
 
     return scans
 
@@ -163,14 +169,18 @@ if __name__ == '__main__':
     if not os.path.exists(weights_path):
         if len(os.listdir('data/resized_input')) <= 1:
             print('Loading scans')
-            X_train = load_scans('data/input', target_size)#, save=('data/resized_input', 'png'))
+            start = time.time()
+            X_train = load_scans('data/input', target_size, save=('data/resized_input', 'png'))
+            print(f'Took {time.time() - start}s to complete')
         else:
             print('Loading input images')
             X_train = load_img('data/resized_input')
 
         if len(os.listdir('data/resized_masks')) <= 1:
             print('Loading masks')
-            y_train = load_scans('data/masks', target_size, is_mask=True)#, save=('data/resized_masks', 'png'))
+            start = time.time()
+            y_train = load_scans('data/masks', target_size, is_mask=True, save=('data/resized_masks', 'png'))
+            print(f'Took {time.time() - start}s to complete')
         else:
             print('Loading mask images')
             y_train = load_img('data/resized_masks')
@@ -189,13 +199,12 @@ if __name__ == '__main__':
               dicom.dcmread('data/test/test4_50/1_0.1_850_50.0_0.01_1.0_1.0_4.0_deformed_mask.dcm').pixel_array,
               dicom.dcmread('data/test/test4_50/1_0.2_850_50.0_0.01_1.0_1.0_4.0_deformed_mask.dcm').pixel_array]
 
-    max_val = (2 ** 14) - 1
     for i in range(len(X_test)):
-        X_test[i] = X_test[i] / max_val
+        X_test[i] = X_test[i] / max_14b
         X_test[i] = cv2.resize(X_test[i], target_size, interpolation=cv2.INTER_AREA)
 
     for i in range(len(y_test)):
-        y_test[i] = y_test[i] / max_val
+        y_test[i] = y_test[i] / max_14b
         y_test[i] = invert(y_test[i])
         thresh = 0.61
         binarize(y_test[i], thresh)
@@ -215,7 +224,7 @@ if __name__ == '__main__':
     if loaded_weights:
         model.load_weights(weights_path)
     else:
-        model_checkpoint = ModelCheckpoint(weights_path, monitor='accuracy',verbose=1, save_best_only=True)
+        model_checkpoint = ModelCheckpoint(weights_path, monitor='loss',verbose=1, save_best_only=True)
         #callbacks = []
         callbacks = [model_checkpoint]
         train_gene = train_generator(X_train, y_train, batch_size=batch_size, target_size=target_size,
@@ -233,8 +242,7 @@ if __name__ == '__main__':
         test_loss, test_acc = model.evaluate(x, y, batch_size=batch_size)
         print(f'Test loss = {test_loss}, test acc = {test_acc}')
 
-    test_gene = test_generator(X_test)
-    predict = model.predict_generator(test_gene, num_tests, verbose=1)
+    predict = model.predict(X_test)
 
     i = 0
     for p in predict:
