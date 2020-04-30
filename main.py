@@ -7,6 +7,7 @@ from PIL import Image, ImageFilter
 from sklearn.model_selection import train_test_split
 import gc
 import time
+import matplotlib.pyplot as plt
 
 max_14b = float((2 ** 14) - 1)
 max_16b = float((2 ** 16) - 1)
@@ -160,7 +161,7 @@ def test_generator(test, target_size=(256,256), flag_multi_class=False, as_gray=
         yield img
 
 if __name__ == '__main__':
-    testing = False
+    testing = True
     batch_size = 4
     epochs = 5
     data_aug = True
@@ -177,24 +178,24 @@ if __name__ == '__main__':
     weights_path = f'unet_b_{batch_size}_e_{epochs}_t_{target_size[0]}x{target_size[1]}.hdf5'
     loaded_weights = False
     if not os.path.exists(weights_path) or not testing:
-        if len(os.listdir('data/resized_input/01')) <= 1:
+        if len(os.listdir('data/resized_input/02')) <= 1:
             print('Loading scans')
             start = time.time()
-            X_train = load_scans('data/input/01', target_size, save=('data/resized_input/01', 'png'))
+            X_train = load_scans('data/input/02', target_size, save=('data/resized_input/02', 'png'))
             print(f'Took {time.time() - start}s to complete')
         else:
             print('Loading input images')
-            X_train = load_img('data/resized_input')
+            X_train = load_img('data/resized_input/02')
             X_train = X_train / max_14b
 
-        if len(os.listdir('data/resized_masks/01')) <= 1:
+        if len(os.listdir('data/resized_masks/02')) <= 1:
             print('Loading masks')
             start = time.time()
-            y_train = load_scans('data/masks/01', target_size, is_mask=True, save=('data/resized_masks/01', 'png'))
+            y_train = load_scans('data/masks/02', target_size, is_mask=True, save=('data/resized_masks/02', 'png'))
             print(f'Took {time.time() - start}s to complete')
         else:
             print('Loading mask images')
-            y_train = load_img('data/resized_masks')
+            y_train = load_img('data/resized_masks/02')
             y_train = y_train / max_16b
 
     else:
@@ -202,16 +203,16 @@ if __name__ == '__main__':
         loaded_weights = True
 
     #X_train, X_test, y_train, y_test = train_test_split(X_train, y_train, test_size=0.2)
-    x_paths = ['data/test/test3_25/0_0.1_425_25.0_0.1_1.0_1.0_2.0_deformed.dcm',
-              #'data/test/test3_25/0_0.2_425_25.0_0.1_1.0_1.0_2.0_deformed.dcm',
-              'data/test/test4_50/1_0.1_850_50.0_0.01_1.0_1.0_4.0_deformed.dcm',
-              #'data/test/test4_50/1_0.2_850_50.0_0.01_1.0_1.0_4.0_deformed.dcm'
+    x_paths = [#'data/test/test3_25/0_0.1_425_25.0_0.1_1.0_1.0_2.0_deformed.dcm',
+              'data/test/test3_25/0_0.2_425_25.0_0.1_1.0_1.0_2.0_deformed.dcm',
+              #'data/test/test4_50/1_0.1_850_50.0_0.01_1.0_1.0_4.0_deformed.dcm',
+              'data/test/test4_50/1_0.2_850_50.0_0.01_1.0_1.0_4.0_deformed.dcm'
               ]
 
-    y_paths = ['data/test/test3_25/0_0.1_425_25.0_0.1_1.0_1.0_2.0_deformed_mask.dcm',
-              #'data/test/test3_25/0_0.2_425_25.0_0.1_1.0_1.0_2.0_deformed_mask.dcm',
-              'data/test/test4_50/1_0.1_850_50.0_0.01_1.0_1.0_4.0_deformed_mask.dcm',
-              #'data/test/test4_50/1_0.2_850_50.0_0.01_1.0_1.0_4.0_deformed_mask.dcm'
+    y_paths = [#'data/test/test3_25/0_0.1_425_25.0_0.1_1.0_1.0_2.0_deformed_mask.dcm',
+              'data/test/test3_25/0_0.2_425_25.0_0.1_1.0_1.0_2.0_deformed_mask.dcm',
+              #'data/test/test4_50/1_0.1_850_50.0_0.01_1.0_1.0_4.0_deformed_mask.dcm',
+              'data/test/test4_50/1_0.2_850_50.0_0.01_1.0_1.0_4.0_deformed_mask.dcm'
               ]
     X_test = []
     y_test = []
@@ -258,16 +259,24 @@ if __name__ == '__main__':
 
     num_tests = len(X_test)
 
+    loss = []
+    acc = []
     for (x, y) in zip(X_test, y_test):
         x = np.reshape(x, (1,) + x.shape)
         y = np.reshape(y, (1,) + y.shape)
         test_loss, test_acc = model.evaluate(x, y, batch_size=batch_size)
+        loss.append(test_loss)
+        acc.append(test_acc)
         print(f'Test loss = {test_loss}, test acc = {test_acc}')
 
     predict = model.predict(X_test)
 
     i = 0
     for p in predict:
-        save_img((p * max_16b).astype(np.uint16), f'{i}.png', method='cv2')
-        #show_img(y_test[i], method='cv2')
+        _, axs = plt.subplots(1, 2)
+        axs[0].imshow(np.reshape(p, target_size), cmap='gray')
+        axs[0].axis('off')
+        axs[1].imshow(np.reshape(y_test[i], target_size), cmap='gray')
+        axs[1].axis('off')
+        plt.savefig(f'{i}.png', bbox_inches='tight')
         i += 1
